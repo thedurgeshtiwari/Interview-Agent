@@ -1,208 +1,294 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useDispatch, useSelector } from 'react-redux'
-import axios from 'axios'
-import { ServerUrl } from '../App'
-import { setUserData } from '../redux/userSlice'
-import Navbar from '../components/Navbar'
-import { motion, AnimatePresence } from 'motion/react'
-import { FaCheck, FaArrowLeft, FaCoins } from 'react-icons/fa'
-import { IoSparkles } from 'react-icons/io5'
-import { AiOutlineLoading3Quarters } from 'react-icons/ai'
+import React, { useState } from "react";
+import { motion } from "motion/react";
+import confetti from "canvas-confetti";
+import {
+  FaCoins,
+  FaCheck,
+  FaCreditCard,
+  FaShieldAlt,
+  FaBolt,
+  FaStar,
+} from "react-icons/fa";
+import { IoSparkles } from "react-icons/io5";
+import { BsCoin } from "react-icons/bs";
+import axios from "axios";
+import { useSelector, useDispatch } from "react-redux";
+import { setUserData } from "../redux/userSlice";
+import Navbar from "../components/Navbar";
+import AuthModal from "../components/AuthModal";
+import { ServerUrl } from "../App";
+
+// Asset import
+import creditAsset from "../assets/credit.png";
+
+const PRICING_TIERS = [
+  {
+    id: "starter",
+    name: "Starter Booster",
+    credits: 50,
+    price: "$9",
+    tagline: "Great for quick brush-ups",
+    features: [
+      "50 Credits (~2.5 Full Mock Sessions)",
+      "Technical & HR Track Access",
+      "Real-time Speech Recognition",
+      "Instant AI Scorecards & Tips",
+    ],
+    popular: false,
+    buttonText: "Get 50 Credits",
+  },
+  {
+    id: "pro",
+    name: "Pro Interviewer",
+    credits: 200,
+    price: "$24",
+    tagline: "Most popular for active job seekers",
+    features: [
+      "200 Credits (10 Full Mock Sessions)",
+      "All Tracks: Tech, HR & Resume-Specific",
+      "Both Male & Female AI Avatars",
+      "Unlimited PDF Scorecard Exports",
+      "Detailed Question-by-Question Coaching",
+    ],
+    popular: true,
+    buttonText: "Claim 200 Credits",
+  },
+  {
+    id: "master",
+    name: "Placement Master",
+    credits: 600,
+    price: "$49",
+    tagline: "Comprehensive career mastery",
+    features: [
+      "600 Credits (30 Mock Sessions)",
+      "Priority AI Evaluation Processing",
+      "Deep Resume Gap Analysis",
+      "Lifetime Session History Access",
+      "VIP Support & Early Features",
+    ],
+    popular: false,
+    buttonText: "Unlock 600 Credits",
+  },
+];
 
 const Pricing = () => {
-  const navigate = useNavigate()
-  const dispatch = useDispatch()
-  const { userData } = useSelector((state) => state.user)
+  const dispatch = useDispatch();
+  const { userData } = useSelector((state) => state.user);
 
-  const [loadingPlan, setLoadingPlan] = useState(null) // plan index being purchased
-  const [showSuccess, setShowSuccess] = useState(false)
-  const [creditsAdded, setCreditsAdded] = useState(0)
+  const [loadingTier, setLoadingTier] = useState(null);
+  const [successMsg, setSuccessMsg] = useState("");
+  const [authModalOpen, setAuthModalOpen] = useState(false);
 
-  const plans = [
-    {
-      name: 'Starter Package',
-      credits: 50,
-      price: '$5',
-      description: 'Ideal for a quick warm-up before a screening interview.',
-      features: [
-        '5 mock interviews (10 credits/each)',
-        'Standard Gemini AI question generation',
-        'Speech-to-text voice answers',
-        'Granular feedback scoreboard'
-      ]
-    },
-    {
-      name: 'Pro Package',
-      credits: 200,
-      price: '$15',
-      description: 'Best for candidates undergoing active interview rounds.',
-      features: [
-        '20 mock interviews (10 credits/each)',
-        'Priority Gemini AI response grading',
-        'Speech-to-text voice answers',
-        'Comprehensive interview history log',
-        'AI recommended model answers'
-      ],
-      popular: true
-    },
-    {
-      name: 'Interview Ace',
-      credits: 500,
-      price: '$30',
-      description: 'Designed for deep practice and high-volume mock runs.',
-      features: [
-        '50 mock interviews (10 credits/each)',
-        'Priority Gemini AI response grading',
-        'Speech-to-text voice answers',
-        'Comprehensive interview history log',
-        'AI recommended model answers',
-        'VIP access to new features'
-      ]
+  const handlePurchase = async (tier) => {
+    if (!userData) {
+      setAuthModalOpen(true);
+      return;
     }
-  ]
 
-  const handlePurchase = async (planCredits, index) => {
-    setLoadingPlan(index)
     try {
+      setLoadingTier(tier.id);
+      setSuccessMsg("");
+
       const response = await axios.post(
         `${ServerUrl}/api/user/add-credits`,
-        { credits: planCredits },
+        { amount: tier.credits },
         { withCredentials: true }
-      )
+      );
 
-      // Update Redux state with new credits
-      dispatch(setUserData(response.data))
+      // Update Redux state
+      dispatch(
+        setUserData({
+          ...userData,
+          credits: response.data.credits,
+        })
+      );
 
-      setCreditsAdded(planCredits)
-      setShowSuccess(true)
-      setTimeout(() => setShowSuccess(false), 4000)
+      setSuccessMsg(`Successfully added ${tier.credits} credits to your account!`);
+      confetti({
+        particleCount: 70,
+        spread: 60,
+        origin: { y: 0.6 },
+      });
     } catch (err) {
-      console.error('Failed to purchase credits:', err)
-      alert('Mock payment processing failed. Please try again.')
+      console.error("Credit purchase error:", err);
+      setSuccessMsg("Failed to top up credits. Please try again.");
     } finally {
-      setLoadingPlan(null)
+      setLoadingTier(null);
     }
-  }
+  };
 
   return (
-    <div className='min-h-screen bg-[#f3f3f3] flex flex-col font-sans text-black relative'>
+    <div className="min-h-screen bg-[#f6f7fb] flex flex-col selection:bg-black selection:text-white">
       <Navbar />
 
-      {/* Success Notification Alert */}
-      <AnimatePresence>
-        {showSuccess && (
-          <motion.div
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            className='fixed top-24 left-1/2 transform -translate-x-1/2 bg-emerald-600 text-white px-6 py-4 rounded-2xl shadow-xl z-50 flex items-center gap-3 border border-emerald-500 font-semibold text-sm'
-          >
-            <IoSparkles className="text-yellow-300" />
-            <span>Success! <strong>+{creditsAdded} Credits</strong> have been added to your balance.</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <main className='flex-1 max-w-6xl w-full mx-auto px-6 py-10 flex flex-col items-center gap-8'>
-        
+      <main className="max-w-6xl mx-auto w-full px-4 py-10 md:py-16 space-y-12">
         {/* Header */}
-        <div className='text-center max-w-2xl flex flex-col items-center gap-3'>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className='flex items-center gap-2 border border-gray-300 bg-white hover:bg-gray-50 text-xs font-semibold px-4 py-2 rounded-full cursor-pointer transition mb-2 shadow-sm'
-          >
-            <FaArrowLeft size={10} />
-            Back to Dashboard
-          </button>
+        <div className="text-center max-w-2xl mx-auto space-y-4">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold rounded-full shadow-xs">
+            <BsCoin size={14} className="text-amber-500" />
+            <span>Pay As You Go Credits</span>
+          </div>
 
-          <h2 className='text-3xl md:text-4xl font-extrabold tracking-tight'>
-            Top Up Your Credits
-          </h2>
-          <p className='text-gray-500 text-sm md:text-base leading-relaxed'>
-            Each mock interview costs 10 credits. Purchase a package to generate custom job-specific questions and unlock detailed AI scoring analyses.
+          <h1 className="text-3xl md:text-5xl font-extrabold text-gray-950 tracking-tight">
+            Simple, Transparent Credit Packs
+          </h1>
+
+          <p className="text-sm md:text-base text-gray-600">
+            Each full mock interview session with interactive AI video avatars costs 20 credits. No monthly subscriptions, no expiry.
           </p>
+
+          {/* Current Balance Banner */}
+          <div className="inline-flex items-center gap-3 bg-white px-5 py-2.5 rounded-2xl border border-gray-200 shadow-sm mt-2">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              Your Current Balance:
+            </span>
+            <span className="text-base font-extrabold text-emerald-600 flex items-center gap-1.5">
+              <BsCoin size={18} className="text-amber-500" />
+              <span>{userData?.credits ?? 0} Credits</span>
+            </span>
+          </div>
         </div>
 
-        {/* Balance Status */}
-        <div className='bg-white px-6 py-4 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4 text-sm font-semibold'>
-          <div className='bg-yellow-100 text-yellow-600 p-2.5 rounded-xl'>
-            <FaCoins size={18} />
+        {successMsg && (
+          <div className="max-w-md mx-auto p-4 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-2xl text-center text-xs font-bold shadow-sm">
+            {successMsg}
           </div>
-          <div>
-            <p className='text-gray-400 text-xs font-medium'>Current Balance</p>
-            <span className='text-lg font-bold text-black'>{userData?.credits ?? 0} Credits</span>
-          </div>
-        </div>
+        )}
 
         {/* Pricing Cards Grid */}
-        <div className='grid grid-cols-1 md:grid-cols-3 gap-8 w-full mt-6 items-start'>
-          {plans.map((plan, index) => (
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              key={plan.name}
-              className={`bg-white rounded-3xl p-8 border shadow-sm flex flex-col justify-between min-h-[480px] relative ${
-                plan.popular ? 'border-black ring-2 ring-black' : 'border-gray-200'
-              }`}
-            >
-              {plan.popular && (
-                <span className='absolute -top-3.5 left-1/2 transform -translate-x-1/2 bg-black text-white text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-full border border-black shadow'>
-                  Most Popular
-                </span>
-              )}
-
-              <div className='flex flex-col gap-4'>
-                <div>
-                  <h3 className='font-extrabold text-lg'>{plan.name}</h3>
-                  <p className='text-gray-400 text-xs mt-1.5 leading-relaxed'>{plan.description}</p>
-                </div>
-
-                <div className='flex items-baseline gap-1 my-3'>
-                  <span className='text-4xl font-black'>{plan.price}</span>
-                  <span className='text-gray-400 text-sm font-medium'>/ {plan.credits} Credits</span>
-                </div>
-
-                <div className='w-full border-t border-gray-100 my-2'></div>
-
-                <ul className='flex flex-col gap-3.5 text-xs text-gray-600 font-medium'>
-                  {plan.features.map((feature) => (
-                    <li key={feature} className='flex items-start gap-2.5 leading-tight'>
-                      <FaCheck size={10} className='text-emerald-500 mt-0.5 flex-shrink-0' />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <button
-                onClick={() => handlePurchase(plan.credits, index)}
-                disabled={loadingPlan !== null}
-                className={`w-full font-semibold text-sm py-3.5 rounded-xl mt-8 transition flex items-center justify-center gap-2 cursor-pointer shadow-md ${
-                  plan.popular
-                    ? 'bg-black text-white hover:bg-gray-900'
-                    : 'border border-gray-300 bg-white hover:bg-gray-50 text-black'
-                } disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed`}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+          {PRICING_TIERS.map((tier) => {
+            const isPopular = tier.popular;
+            const isLoading = loadingTier === tier.id;
+            return (
+              <motion.div
+                key={tier.id}
+                whileHover={{ y: -6 }}
+                transition={{ duration: 0.2 }}
+                className={`relative rounded-3xl p-8 flex flex-col justify-between transition shadow-sm ${
+                  isPopular
+                    ? "bg-gray-950 text-white border-2 border-emerald-500 shadow-2xl shadow-emerald-500/10"
+                    : "bg-white text-gray-900 border border-gray-200 hover:border-gray-300 hover:shadow-lg"
+                }`}
               >
-                {loadingPlan === index ? (
-                  <>
-                    <AiOutlineLoading3Quarters className='animate-spin' size={16} />
-                    Processing Payment...
-                  </>
-                ) : (
-                  <>
-                    Purchase Package
-                  </>
+                {/* Popular Pill */}
+                {isPopular && (
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-emerald-500 text-black text-[11px] font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md flex items-center gap-1">
+                    <IoSparkles size={11} />
+                    <span>Best Value Choice</span>
+                  </div>
                 )}
-              </button>
-            </motion.div>
-          ))}
+
+                <div>
+                  {/* Title & Tagline */}
+                  <div className="space-y-1 mb-4">
+                    <h3 className="text-xl font-bold">{tier.name}</h3>
+                    <p className={`text-xs ${isPopular ? "text-gray-400" : "text-gray-500"}`}>
+                      {tier.tagline}
+                    </p>
+                  </div>
+
+                  {/* Price & Credits */}
+                  <div className="flex items-baseline gap-2 mb-6 pb-6 border-b border-gray-100/10">
+                    <span className="text-4xl font-extrabold tracking-tight">
+                      {tier.price}
+                    </span>
+                    <span className={`text-xs font-bold ${isPopular ? "text-emerald-400" : "text-emerald-600"}`}>
+                      / {tier.credits} Credits
+                    </span>
+                  </div>
+
+                  {/* Features List */}
+                  <ul className="space-y-3 mb-8">
+                    {tier.features.map((feat, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5 text-xs leading-relaxed">
+                        <div
+                          className={`mt-0.5 p-1 rounded-full ${
+                            isPopular
+                              ? "bg-emerald-500/20 text-emerald-400"
+                              : "bg-emerald-50 text-emerald-600"
+                          }`}
+                        >
+                          <FaCheck size={9} />
+                        </div>
+                        <span className={isPopular ? "text-gray-300" : "text-gray-600"}>
+                          {feat}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Purchase Button */}
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  disabled={isLoading}
+                  onClick={() => handlePurchase(tier)}
+                  className={`w-full py-3.5 rounded-2xl text-xs font-extrabold transition shadow-md flex items-center justify-center gap-2 ${
+                    isPopular
+                      ? "bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20"
+                      : "bg-black hover:bg-gray-800 text-white"
+                  }`}
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FaCreditCard size={12} />
+                      <span>{tier.buttonText}</span>
+                    </>
+                  )}
+                </motion.button>
+              </motion.div>
+            );
+          })}
         </div>
 
-      </main>
-    </div>
-  )
-}
+        {/* FAQs */}
+        <div className="bg-white rounded-3xl p-8 md:p-12 border border-gray-200 max-w-4xl mx-auto space-y-6">
+          <h3 className="text-xl font-bold text-gray-950 text-center">
+            Frequently Asked Questions
+          </h3>
 
-export default Pricing
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            <div className="space-y-1.5">
+              <h4 className="text-sm font-bold text-gray-900">How many credits per interview?</h4>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Each mock interview session with AI avatar questions, voice analysis, and full PDF report costs 20 credits.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <h4 className="text-sm font-bold text-gray-900">Do my credits expire?</h4>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                No, purchased credits never expire and stay in your account forever until you use them.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <h4 className="text-sm font-bold text-gray-900">Can I customize the questions?</h4>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Yes! You can specify your target job role, seniority level, target company, and paste your resume for targeted practice.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <h4 className="text-sm font-bold text-gray-900">Can I download my report as a PDF?</h4>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Yes, every completed session allows 1-click PDF download with your complete transcript, model answers, and coaching notes.
+              </p>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+    </div>
+  );
+};
+
+export default Pricing;
