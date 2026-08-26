@@ -239,6 +239,7 @@ const InterviewRoom = () => {
 
       const nextIndex = currentIndex + 1;
       if (nextIndex < interview.questions.length) {
+        setTranscript("");
         setCurrentIndex(nextIndex);
       } else {
         // All questions finished! Trigger final evaluation

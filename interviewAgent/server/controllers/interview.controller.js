@@ -1,3 +1,4 @@
+import { createRequire } from "module";
 import Interview from "../models/interview.model.js";
 import User from "../models/user.model.js";
 import {
@@ -5,6 +6,64 @@ import {
   evaluateSingleAnswer,
   generateFinalEvaluation,
 } from "../services/ai.service.js";
+
+const require = createRequire(import.meta.url);
+const { PDFParse } = require("pdf-parse");
+
+// Parse uploaded PDF resume and extract text
+export const parseResumePdf = async (req, res) => {
+  let parser = null;
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No PDF file uploaded" });
+    }
+
+    if (
+      req.file.mimetype !== "application/pdf" &&
+      !req.file.originalname.toLowerCase().endsWith(".pdf")
+    ) {
+      return res.status(400).json({ message: "Only PDF files are supported for resume parsing" });
+    }
+
+    parser = new PDFParse({ data: req.file.buffer });
+    await parser.load();
+    const result = await parser.getText();
+    const rawText = (typeof result === "string" ? result : result?.text) || "";
+    const numPages = result?.total || 1;
+
+    // Clean up excessive whitespace and page marker tags
+    const cleanedText = rawText
+      .replace(/--\s*\d+\s*of\s*\d+\s*--/gi, "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    if (!cleanedText || cleanedText.length < 20) {
+      return res.status(400).json({
+        message: "Could not extract readable text from this PDF. Please ensure it is not an image-only scan.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Resume parsed successfully",
+      fileName: req.file.originalname,
+      numPages,
+      charCount: cleanedText.length,
+      text: cleanedText,
+    });
+  } catch (error) {
+    console.error("Error parsing resume PDF:", error);
+    return res.status(500).json({ message: `Failed to parse PDF resume: ${error.message}` });
+  } finally {
+    if (parser && typeof parser.destroy === "function") {
+      try {
+        await parser.destroy();
+      } catch (e) {
+        // ignore cleanup error
+      }
+    }
+  }
+};
 
 // Create / Start a new interview session
 export const createInterview = async (req, res) => {
@@ -33,11 +92,17 @@ export const createInterview = async (req, res) => {
       });
     }
 
+    if (interviewType === "Resume" && (!resumeText || resumeText.trim().length < 20)) {
+      return res.status(400).json({
+        message: "Please upload your resume PDF or provide your resume details for a Resume-Based interview.",
+      });
+    }
+
     // Deduct credits
     user.credits -= COST_PER_INTERVIEW;
     await user.save();
 
-    // Generate questions using AI Service
+    // Generate questions using AI Service (strictly resume-based if Resume type/text provided)
     const questions = await generateInterviewQuestions({
       interviewType,
       jobRole,
@@ -53,7 +118,7 @@ export const createInterview = async (req, res) => {
       jobRole,
       experienceLevel,
       targetCompany,
-      resumeText,
+      resumeText: resumeText || "",
       avatar,
       questions,
       status: "in-progress",
@@ -88,19 +153,29 @@ export const submitAnswer = async (req, res) => {
       return res.status(404).json({ message: "Question not found in interview" });
     }
 
-    targetQuestion.userTranscript = transcript || "";
+    const isUnanswered =
+      !transcript ||
+      transcript.trim().length < 3 ||
+      transcript.trim() === "No spoken answer provided.";
 
-    // Evaluate single answer
-    const evaluation = await evaluateSingleAnswer({
-      question: targetQuestion.question,
-      userTranscript: transcript,
-      jobRole: interview.jobRole,
-      experienceLevel: interview.experienceLevel,
-      interviewType: interview.interviewType,
-    });
+    targetQuestion.userTranscript = isUnanswered ? "No spoken answer provided." : transcript.trim();
 
-    targetQuestion.score = evaluation.score || 70;
-    targetQuestion.feedback = evaluation.feedback || "";
+    if (isUnanswered) {
+      targetQuestion.score = 0;
+      targetQuestion.feedback = "No response was recorded for this question.";
+    } else {
+      // Evaluate single answer
+      const evaluation = await evaluateSingleAnswer({
+        question: targetQuestion.question,
+        userTranscript: transcript,
+        jobRole: interview.jobRole,
+        experienceLevel: interview.experienceLevel,
+        interviewType: interview.interviewType,
+      });
+
+      targetQuestion.score = typeof evaluation.score === "number" ? evaluation.score : 0;
+      targetQuestion.feedback = evaluation.feedback || "";
+    }
 
     await interview.save();
 
@@ -128,6 +203,21 @@ export const finishInterview = async (req, res) => {
       return res.status(404).json({ message: "Interview session not found" });
     }
 
+    // Ensure any untouched/skipped questions are marked score 0 with clean feedback
+    interview.questions.forEach((q) => {
+      if (
+        !q.userTranscript ||
+        q.userTranscript.trim().length < 3 ||
+        q.userTranscript === "No spoken answer provided."
+      ) {
+        q.score = 0;
+        q.userTranscript = "No spoken answer provided.";
+        if (!q.feedback) {
+          q.feedback = "No response was recorded for this question.";
+        }
+      }
+    });
+
     // Generate comprehensive evaluation
     const evaluation = await generateFinalEvaluation({
       interviewType: interview.interviewType,
@@ -136,14 +226,18 @@ export const finishInterview = async (req, res) => {
       questionsWithAnswers: interview.questions,
     });
 
-    interview.overallScore = evaluation.overallScore || 75;
+    interview.overallScore =
+      typeof evaluation.overallScore === "number" ? evaluation.overallScore : 0;
     interview.feedback = {
       strengths: evaluation.strengths || [],
       weaknesses: evaluation.weaknesses || [],
       summary: evaluation.summary || "",
-      technicalScore: evaluation.technicalScore || 75,
-      communicationScore: evaluation.communicationScore || 75,
-      confidenceScore: evaluation.confidenceScore || 75,
+      technicalScore:
+        typeof evaluation.technicalScore === "number" ? evaluation.technicalScore : 0,
+      communicationScore:
+        typeof evaluation.communicationScore === "number" ? evaluation.communicationScore : 0,
+      confidenceScore:
+        typeof evaluation.confidenceScore === "number" ? evaluation.confidenceScore : 0,
       suggestions: evaluation.suggestions || [],
     };
     interview.status = "completed";

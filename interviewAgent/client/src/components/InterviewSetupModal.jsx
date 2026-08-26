@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   FaTimes,
@@ -9,6 +9,13 @@ import {
   FaCoins,
   FaVolumeUp,
   FaCheckCircle,
+  FaCloudUploadAlt,
+  FaFilePdf,
+  FaTrashAlt,
+  FaEye,
+  FaEyeSlash,
+  FaCheck,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -47,6 +54,8 @@ const InterviewSetupModal = ({
   const dispatch = useDispatch();
   const { userData } = useSelector((state) => state.user);
 
+  const fileInputRef = useRef(null);
+
   const [interviewType, setInterviewType] = useState(initialType);
   const [jobRole, setJobRole] = useState("Full Stack Developer");
   const [experienceLevel, setExperienceLevel] = useState("Mid-Level Engineer (2-4 yrs)");
@@ -57,7 +66,84 @@ const InterviewSetupModal = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // PDF Upload States
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfFileName, setPdfFileName] = useState("");
+  const [pdfPageCount, setPdfPageCount] = useState(0);
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
+  const [pdfUploadSuccess, setPdfUploadSuccess] = useState(false);
+  const [pdfError, setPdfError] = useState("");
+  const [showPreviewText, setShowPreviewText] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+
   if (!isOpen) return null;
+
+  const handlePdfUpload = async (file) => {
+    if (!file) return;
+
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setPdfError("Please upload a valid PDF document (.pdf).");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setPdfError("File size exceeds 10MB limit. Please upload a smaller PDF.");
+      return;
+    }
+
+    setPdfError("");
+    setPdfFile(file);
+    setPdfFileName(file.name);
+    setIsUploadingPdf(true);
+    setPdfUploadSuccess(false);
+
+    try {
+      const formData = new FormData();
+      formData.append("resumePdf", file);
+
+      const response = await axios.post(
+        `${ServerUrl}/api/interview/parse-resume`,
+        formData,
+        {
+          withCredentials: true,
+          headers: { "Content-Type": "multipart/form-data" },
+        }
+      );
+
+      const parsedText = response.data.text || "";
+      setResumeText(parsedText);
+      setPdfPageCount(response.data.numPages || 1);
+      setPdfUploadSuccess(true);
+      setErrorMsg("");
+    } catch (err) {
+      console.error("Resume upload/parsing error:", err);
+      const msg =
+        err.response?.data?.message ||
+        "Failed to read and parse this PDF. You can paste your resume text manually below.";
+      setPdfError(msg);
+      setPdfFile(null);
+      setPdfFileName("");
+    } finally {
+      setIsUploadingPdf(false);
+    }
+  };
+
+  const handleFileDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handlePdfUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleRemovePdf = () => {
+    setPdfFile(null);
+    setPdfFileName("");
+    setResumeText("");
+    setPdfUploadSuccess(false);
+    setPdfError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleStart = async () => {
     if (!userData) {
@@ -68,6 +154,11 @@ const InterviewSetupModal = ({
 
     if ((userData.credits || 0) < 20) {
       setErrorMsg("You need at least 20 credits to start an interview session. Please recharge credits.");
+      return;
+    }
+
+    if (interviewType === "Resume" && (!resumeText || resumeText.trim().length < 20)) {
+      setErrorMsg("Please upload your PDF resume so the AI can tailor questions strictly to your experience.");
       return;
     }
 
@@ -117,7 +208,7 @@ const InterviewSetupModal = ({
           initial={{ opacity: 0, scale: 0.92, y: 30 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.92, y: 30 }}
-          className="relative w-full max-w-3xl bg-white rounded-3xl p-6 md:p-8 shadow-2xl border border-gray-100 my-8"
+          className="relative w-full max-w-3xl bg-white rounded-3xl p-6 md:p-8 shadow-2xl border border-gray-100 my-8 max-h-[90vh] flex flex-col"
         >
           {/* Close button */}
           <button
@@ -128,7 +219,7 @@ const InterviewSetupModal = ({
           </button>
 
           {/* Header */}
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center gap-3 mb-6 shrink-0">
             <div className="bg-black text-white p-2.5 rounded-xl shadow-sm">
               <FaRobot size={22} />
             </div>
@@ -137,13 +228,13 @@ const InterviewSetupModal = ({
                 Setup Your AI Mock Interview
               </h2>
               <p className="text-xs md:text-sm text-gray-500">
-                Configure your domain, seniority, and preferred AI interviewer
+                Configure your interview format, upload your resume, or select your interviewer
               </p>
             </div>
           </div>
 
           {/* Mode Tabs */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="grid grid-cols-3 gap-3 mb-6 shrink-0">
             <button
               type="button"
               onClick={() => setInterviewType("Technical")}
@@ -175,26 +266,165 @@ const InterviewSetupModal = ({
               onClick={() => setInterviewType("Resume")}
               className={`flex items-center justify-center gap-2 py-3 px-3 rounded-2xl font-medium text-sm transition border-2 ${
                 interviewType === "Resume"
-                  ? "border-black bg-black text-white shadow-md"
-                  : "border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700"
+                  ? "border-emerald-600 bg-emerald-600 text-white shadow-md"
+                  : "border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-800"
               }`}
             >
-              <FaFileAlt size={16} />
-              <span>Resume-Based</span>
+              <FaFilePdf size={16} />
+              <span className="font-semibold">Resume-Based</span>
             </button>
           </div>
 
-          <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-1">
+          {/* Scrollable Form Body */}
+          <div className="space-y-5 overflow-y-auto pr-1 flex-1">
+            {/* Resume Upload Section (Prominently featured when Resume mode is active) */}
+            {interviewType === "Resume" && (
+              <div className="p-4 md:p-5 rounded-2xl bg-gradient-to-br from-emerald-50/70 via-white to-gray-50 border-2 border-emerald-200">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
+                      <FaFilePdf size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900">
+                        Upload Your PDF Resume
+                      </h4>
+                      <p className="text-xs text-gray-500">
+                        Questions will be asked <strong className="text-emerald-700">exclusively</strong> from your uploaded projects & experience
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dropzone / Upload Area */}
+                {!pdfUploadSuccess ? (
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragOver(true);
+                    }}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={handleFileDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`cursor-pointer border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center ${
+                      isDragOver
+                        ? "border-emerald-500 bg-emerald-100/50 scale-[1.01]"
+                        : "border-gray-300 hover:border-emerald-400 bg-white"
+                    }`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handlePdfUpload(e.target.files[0]);
+                        }
+                      }}
+                    />
+
+                    {isUploadingPdf ? (
+                      <div className="flex flex-col items-center gap-2 py-2">
+                        <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs font-semibold text-emerald-800">
+                          Extracting resume content & projects...
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-2 shadow-sm">
+                          <FaCloudUploadAlt size={24} />
+                        </div>
+                        <p className="text-sm font-semibold text-gray-800">
+                          Click to browse or drag & drop your Resume PDF
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Supported format: PDF up to 10MB
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  /* Success Upload Card */
+                  <div className="bg-white rounded-2xl border border-emerald-300 p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                          <FaFilePdf size={20} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-gray-900 truncate max-w-xs md:max-w-sm">
+                              {pdfFileName}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              <FaCheck size={10} /> Ready
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {pdfPageCount} Page{pdfPageCount > 1 ? "s" : ""} • ~{resumeText.length} characters parsed
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowPreviewText(!showPreviewText)}
+                          className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1.5 transition"
+                          title="Preview parsed text"
+                        >
+                          {showPreviewText ? <FaEyeSlash size={13} /> : <FaEye size={13} />}
+                          <span>{showPreviewText ? "Hide" : "Preview"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemovePdf}
+                          className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                          title="Remove PDF"
+                        >
+                          <FaTrashAlt size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Preview Text Box */}
+                    {showPreviewText && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          Extracted Resume Content (Editable):
+                        </label>
+                        <textarea
+                          rows={4}
+                          value={resumeText}
+                          onChange={(e) => setResumeText(e.target.value)}
+                          className="w-full text-xs font-mono p-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-gray-800"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {pdfError && (
+                  <div className="mt-2 text-xs text-red-600 flex items-center gap-1.5">
+                    <FaExclamationTriangle size={12} />
+                    <span>{pdfError}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Job Role Selection */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">
-                Target Role / Technology
+                Target Role / Domain
               </label>
               <input
                 type="text"
                 value={jobRole}
                 onChange={(e) => setJobRole(e.target.value)}
-                placeholder="e.g. React Developer, Data Engineer, Python Backend..."
+                placeholder="e.g. Full Stack Developer, Data Engineer, Python Backend..."
                 className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-black text-sm text-gray-900 bg-gray-50"
               />
               <div className="flex flex-wrap gap-1.5 mt-2">
@@ -247,22 +477,6 @@ const InterviewSetupModal = ({
                 />
               </div>
             </div>
-
-            {/* Resume Input if Resume Mode */}
-            {interviewType === "Resume" && (
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">
-                  Resume Summary / Past Projects / Skills
-                </label>
-                <textarea
-                  rows={3}
-                  value={resumeText}
-                  onChange={(e) => setResumeText(e.target.value)}
-                  placeholder="Paste key points from your resume: projects built, tech stack used, past achievements, or responsibilities..."
-                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-black text-sm text-gray-900 bg-gray-50"
-                />
-              </div>
-            )}
 
             {/* AI Avatar Selector with live video preview */}
             <div>
@@ -353,13 +567,13 @@ const InterviewSetupModal = ({
           </div>
 
           {errorMsg && (
-            <div className="mt-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-100">
+            <div className="mt-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-100 shrink-0">
               {errorMsg}
             </div>
           )}
 
           {/* Footer actions */}
-          <div className="mt-6 pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="mt-6 pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <FaCoins className="text-amber-500" size={16} />
               <span>Session Cost: <strong className="text-gray-900">20 Credits</strong></span>
@@ -378,9 +592,9 @@ const InterviewSetupModal = ({
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                disabled={loading}
+                disabled={loading || isUploadingPdf}
                 onClick={handleStart}
-                className="flex-1 sm:flex-none px-7 py-3 rounded-2xl bg-black text-white text-sm font-semibold shadow-lg hover:bg-gray-800 transition flex items-center justify-center gap-2"
+                className="flex-1 sm:flex-none px-7 py-3 rounded-2xl bg-black text-white text-sm font-semibold shadow-lg hover:bg-gray-800 transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {loading ? (
                   <>

@@ -2,22 +2,30 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const getGeminiModel = () => {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-  } catch (err) {
-    console.warn("Could not initialize GoogleGenerativeAI:", err.message);
+  if (!apiKey || apiKey.trim() === "") {
+    console.warn("⚠️ [AI Service] GEMINI_API_KEY is not set in server/.env. Using fallback generator.");
     return null;
+  }
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey.trim());
+    return genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
+  } catch (err) {
+    console.warn("Could not initialize GoogleGenerativeAI with gemini-3.6-flash:", err.message);
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey.trim());
+      return genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+    } catch (e) {
+      return null;
+    }
   }
 };
 
-// Fallback question bank generator
-const getFallbackQuestions = (interviewType, jobRole, experienceLevel, count = 5) => {
+// Fallback question generator that filters out contact details (emails, phone numbers, urls)
+const getFallbackQuestions = (interviewType, jobRole, experienceLevel, count = 5, resumeText = "") => {
   const isTechnical = interviewType === "Technical";
   const isHR = interviewType === "HR";
 
-  if (isTechnical) {
+  if (isTechnical && !resumeText) {
     return [
       {
         id: 1,
@@ -52,7 +60,7 @@ const getFallbackQuestions = (interviewType, jobRole, experienceLevel, count = 5
     ].slice(0, count);
   }
 
-  if (isHR) {
+  if (isHR && !resumeText) {
     return [
       {
         id: 1,
@@ -87,37 +95,54 @@ const getFallbackQuestions = (interviewType, jobRole, experienceLevel, count = 5
     ].slice(0, count);
   }
 
-  // Resume-based questions
+  // Filter out contact details (phone, email, links, address) so fallback only uses project & tech lines
+  const cleanLines = resumeText
+    ? resumeText
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(
+          (l) =>
+            l.length > 20 &&
+            !l.includes("@") &&
+            !l.match(/\+?\d{8,}/) &&
+            !l.match(/github\.com|linkedin\.com|portfolio|http/i) &&
+            !l.match(/phone|email|address|contact/i)
+        )
+    : [];
+
+  const projectSnippet = cleanLines[0] ? `"${cleanLines[0].slice(0, 50)}..."` : "the core projects in your resume";
+  const techSnippet = cleanLines[1] ? `"${cleanLines[1].slice(0, 50)}..."` : "the tools and frameworks in your resume";
+
   return [
     {
       id: 1,
-      question: `Looking at your background for ${jobRole}, what is the most impactful project you have worked on recently?`,
-      category: "Project Deep Dive",
-      sampleAnswer: "I led the development of a key feature/system that improved system throughput and delivered significant value to our users.",
+      question: `In your resume, you highlighted experience with ${projectSnippet}. Can you walk me through the system architecture, state flow, and your specific technical contributions?`,
+      category: "Resume Project Deep Dive",
+      sampleAnswer: "I was responsible for architecting the solution, selecting the stack, designing data schemas, and ensuring scalable throughput.",
     },
     {
       id: 2,
-      question: "Which technologies or frameworks mentioned in your background are you most confident with and why?",
-      category: "Skills Verification",
-      sampleAnswer: "I have hands-on experience building production features with these technologies and understand their internal mechanics and trade-offs.",
+      question: `Looking at your experience with ${techSnippet}, what was the most demanding technical obstacle or performance bottleneck you encountered and how did you resolve it?`,
+      category: "Technical Problem Solving",
+      sampleAnswer: "I isolated the bottleneck through profiling and logs, identified concurrency/state handling issues, and deployed a targeted refactoring that significantly improved responsiveness.",
     },
     {
       id: 3,
-      question: "Can you walk me through an architectural or design decision you made on a project from your resume?",
-      category: "System Design & Architecture",
-      sampleAnswer: "I evaluated several trade-offs between speed, scalability, and complexity before choosing the optimal modular architecture for our requirements.",
+      question: "Can you elaborate on a key architectural or engineering trade-off you made during one of the major projects highlighted in your resume?",
+      category: "Architecture & Design Decisions",
+      sampleAnswer: "I evaluated multiple architectural trade-offs between delivery speed and long-term scalability before selecting the optimal modular pattern.",
     },
     {
       id: 4,
-      question: "How did you measure the success or business impact of the initiatives you led in your previous roles?",
-      category: "Impact & Metrics",
-      sampleAnswer: "I tracked metrics such as latency reduction, user adoption, test coverage, and customer satisfaction scores.",
+      question: "How did you measure and validate the success, performance, or business impact of the projects detailed in your resume?",
+      category: "Metrics & Business Impact",
+      sampleAnswer: "I tracked concrete metrics such as response latency, user throughput, test coverage, and customer satisfaction scores.",
     },
     {
       id: 5,
-      question: "What is an area of technology or skill you are currently upskilling in to prepare for this role?",
-      category: "Continuous Learning",
-      sampleAnswer: "I am actively exploring modern tooling, cloud design patterns, and AI integrations to build higher efficiency applications.",
+      question: "Based on the technologies in your resume, what is an area where you decided to push your technical boundaries and learn something completely new?",
+      category: "Continuous Growth & Tech Stack",
+      sampleAnswer: "I actively embraced modern tooling, optimized deployment workflows, and integrated modern APIs to solve real-world problems efficiently.",
     },
   ].slice(0, count);
 };
@@ -134,12 +159,49 @@ export const generateInterviewQuestions = async ({
 
   if (model) {
     try {
-      const prompt = `You are an expert technical hiring manager and interviewer at ${targetCompany}.
+      const isResumeMode = interviewType === "Resume" || (resumeText && resumeText.trim().length > 30);
+
+      let prompt = "";
+
+      if (isResumeMode) {
+        prompt = `You are an elite senior technical hiring manager and interviewer at ${targetCompany}.
+You are conducting a strict, project-focused interview based EXCLUSIVELY and DIRECTLY on the candidate's uploaded resume.
+
+=== CANDIDATE RESUME / CV CONTENT ===
+${resumeText.trim()}
+======================================
+
+CRITICAL MANDATORY INSTRUCTIONS:
+1. Every single question MUST directly reference and examine specific projects, tools, frameworks, metrics, internships, responsibilities, or architectural decisions EXPLICITLY mentioned in the candidate's resume above.
+2. DO NOT ask generic textbook questions. DO NOT quote contact details (phone number, email, address).
+3. Craft questions that read like a real human senior interviewer:
+   - "In your resume, you built [Specific Project Name] using [Specific Tech]. Can you walk me through how you designed the database schema, handled state/concurrency, and implemented [Feature]?"
+   - "During your experience with [Company/Project], you mentioned achieving [Specific Result/Metric]. What architectural decisions made that possible?"
+   - "You listed [Specific Tool/Framework]. How did you structure your application and solve debugging bottlenecks in [Specific Project]?"
+4. Generate exactly ${count} diverse, deep-dive questions covering:
+   - Flagship project deep dive
+   - Technical implementation details & code architecture
+   - Complex problem solving, edge cases, and debugging in their listed projects
+   - Scalability, performance optimizations, and metrics mentioned in the resume
+   - Architectural decisions & trade-offs made in their past work
+5. Target Role: ${jobRole} (${experienceLevel})
+
+Return ONLY a valid JSON array of objects with the following schema:
+[
+  {
+    "id": 1,
+    "question": "Specific interview question directly quoting and referencing their exact resume project/experience",
+    "category": "Resume Project Deep Dive / Architecture / Tech Stack",
+    "sampleAnswer": "Key technical details, architecture points, and trade-offs expected in an exemplary answer"
+  }
+]
+Do not include any Markdown code fence outside the JSON or text before/after. Return raw JSON string only.`;
+      } else {
+        prompt = `You are an expert technical hiring manager and interviewer at ${targetCompany}.
 Generate ${count} realistic, challenging, and insightful interview questions for a candidate applying for:
 - Role: ${jobRole}
 - Experience Level: ${experienceLevel}
 - Interview Type: ${interviewType}
-${resumeText ? `- Candidate Resume / Experience Summary: ${resumeText}` : ""}
 
 Return ONLY a valid JSON array of objects with the following schema:
 [
@@ -151,16 +213,19 @@ Return ONLY a valid JSON array of objects with the following schema:
   }
 ]
 Do not include any Markdown code fence outside the JSON or text before/after. Return raw JSON string only.`;
+      }
 
+      console.log(`🤖 [AI Service] Calling Gemini 3.6 Flash for ${isResumeMode ? "Resume-based" : interviewType} questions...`);
       const result = await model.generateContent(prompt);
       const text = result.response.text().trim();
       const cleanedJson = text.replace(/```json|```/gi, "").trim();
       const parsed = JSON.parse(cleanedJson);
       if (Array.isArray(parsed) && parsed.length > 0) {
+        console.log(`✅ [AI Service] Successfully generated ${parsed.length} dynamic AI questions via Gemini.`);
         return parsed.map((q, idx) => ({
           id: idx + 1,
           question: q.question,
-          category: q.category || "Core Competency",
+          category: q.category || "Resume Deep Dive",
           sampleAnswer: q.sampleAnswer || "",
           userTranscript: "",
           userRating: 0,
@@ -169,12 +234,12 @@ Do not include any Markdown code fence outside the JSON or text before/after. Re
         }));
       }
     } catch (err) {
-      console.error("Gemini question generation error, using fallback:", err.message);
+      console.error("❌ [AI Service] Gemini question generation error, falling back:", err.message);
     }
   }
 
   // Fallback
-  return getFallbackQuestions(interviewType, jobRole, experienceLevel, count).map((q, idx) => ({
+  return getFallbackQuestions(interviewType, jobRole, experienceLevel, count, resumeText).map((q, idx) => ({
     ...q,
     id: idx + 1,
     userTranscript: "",
@@ -191,10 +256,17 @@ export const evaluateSingleAnswer = async ({
   experienceLevel,
   interviewType,
 }) => {
-  if (!userTranscript || userTranscript.trim().length < 5) {
+  if (!userTranscript || userTranscript.trim().length < 3) {
     return {
-      score: 30,
-      feedback: "Answer was too brief or incomplete. Try providing concrete examples and structured explanations.",
+      score: 0,
+      feedback: "No response was recorded for this question. Make sure your microphone is active and you speak your answer.",
+    };
+  }
+
+  if (userTranscript.trim().length < 10 || userTranscript.trim().split(/\s+/).length < 3) {
+    return {
+      score: 15,
+      feedback: "Answer was too brief to evaluate. Provide concrete explanations, examples, and technical details.",
     };
   }
 
@@ -202,15 +274,20 @@ export const evaluateSingleAnswer = async ({
 
   if (model) {
     try {
-      const prompt = `You are an AI interviewer assessing a candidate's verbal answer.
+      const prompt = `You are a strict, fair AI interviewer assessing a candidate's verbal answer.
 Question: "${question}"
 Candidate's Response: "${userTranscript}"
 Role: ${jobRole} (${experienceLevel}) - ${interviewType} Round
 
-Evaluate the response and output ONLY a JSON object:
+Evaluate the response accuracy, clarity, and depth.
+If the response does not answer the question or is gibberish, award a score between 0 and 20.
+If the response is partially correct, award between 40 and 70.
+If the response is thorough and demonstrates mastery, award between 75 and 100.
+
+Output ONLY a JSON object:
 {
-  "score": <integer from 10 to 100>,
-  "feedback": "<2-3 sentences of concise feedback highlighting what was good and what could be improved>"
+  "score": <integer from 0 to 100>,
+  "feedback": "<2-3 sentences of honest, constructive feedback highlighting what was good and what was missing>"
 }
 Return raw JSON without markdown fences.`;
 
@@ -219,24 +296,27 @@ Return raw JSON without markdown fences.`;
       const cleaned = text.replace(/```json|```/gi, "").trim();
       return JSON.parse(cleaned);
     } catch (err) {
-      console.error("Gemini single answer evaluation error:", err.message);
+      console.error("❌ [AI Service] Gemini single answer evaluation error:", err.message);
     }
   }
 
   // Fallback evaluation heuristic
-  const wordCount = userTranscript.trim().split(/\s+/).length;
-  let score = 65;
-  let feedback = "Good communication. Consider adding specific metrics and deeper technical rationale.";
+  const words = userTranscript.trim().split(/\s+/).length;
+  let score = 50;
+  let feedback = "Decent attempt. Adding more technical depth and structured examples will improve your evaluation.";
 
-  if (wordCount > 50) {
+  if (words > 60) {
     score = 85;
     feedback = "Thorough and well-articulated response covering key concepts with good clarity.";
-  } else if (wordCount > 25) {
+  } else if (words > 30) {
     score = 75;
     feedback = "Clear answer with relevant points. Adding more concrete project examples would make it even stronger.";
-  } else {
+  } else if (words > 10) {
     score = 55;
-    feedback = "Decent start, but expanding on the reasoning and detailing real-world application would improve your rating.";
+    feedback = "Basic answer provided. Elaborating further on implementation and real-world considerations would raise your score.";
+  } else {
+    score = 25;
+    feedback = "Answer was too short. Try to elaborate on your reasoning and give concrete examples.";
   }
 
   return { score, feedback };
@@ -248,27 +328,59 @@ export const generateFinalEvaluation = async ({
   experienceLevel,
   questionsWithAnswers,
 }) => {
-  const answeredCount = questionsWithAnswers.filter(
-    (q) => q.userTranscript && q.userTranscript.trim().length > 0
-  ).length;
+  const answeredQuestions = questionsWithAnswers.filter(
+    (q) => q.userTranscript && q.userTranscript.trim().length >= 5
+  );
+  const totalCount = questionsWithAnswers.length || 1;
+  const answeredCount = answeredQuestions.length;
+
+  if (answeredCount === 0) {
+    return {
+      overallScore: 0,
+      technicalScore: 0,
+      communicationScore: 0,
+      confidenceScore: 0,
+      summary: "No spoken or written responses were recorded during this interview session. To receive a detailed assessment, please ensure your microphone is enabled and speak your answers clearly for each question.",
+      strengths: [],
+      weaknesses: [
+        "No responses were submitted for any of the interview questions.",
+        "Unable to evaluate technical capability or communication skills without candidate input.",
+      ],
+      suggestions: [
+        "Check browser microphone permissions to ensure audio is properly captured.",
+        "Click the microphone button and speak clearly into your microphone.",
+        "Attempt to answer all questions to receive personalized performance analytics.",
+      ],
+    };
+  }
 
   const model = getGeminiModel();
 
-  if (model && answeredCount > 0) {
+  if (model) {
     try {
       const answersSummary = questionsWithAnswers
-        .map(
-          (q, i) =>
-            `Q${i + 1}: ${q.question}\nAnswer: ${q.userTranscript || "No answer provided"}\n`
-        )
+        .map((q, i) => {
+          const hasAns = q.userTranscript && q.userTranscript.trim().length >= 3;
+          return `Q${i + 1} (${q.category || "General"}): ${q.question}
+Answer: ${hasAns ? q.userTranscript : "[UNANSWERED - Score: 0]"}
+Individual Score: ${q.score || 0}/100\n`;
+        })
         .join("\n");
 
-      const prompt = `You are a Senior Principal Interviewer evaluating a candidate's complete mock interview.
+      const prompt = `You are a Principal Technical Hiring Manager conducting a final evaluation of a candidate's mock interview.
 Role: ${jobRole} (${experienceLevel})
 Round: ${interviewType}
+Total Questions: ${totalCount}
+Questions Answered: ${answeredCount}/${totalCount}
 
-Transcript:
+Interview Log:
 ${answersSummary}
+
+CRITICAL SCORING RULES:
+- Unanswered questions must heavily penalize the overall, technical, communication, and confidence scores proportionally.
+- If only 1 out of 5 questions was answered, the overall score cannot exceed 20-25.
+- If all questions were answered with high quality, score accurately between 75-95.
+- Provide honest, highly constructive feedback.
 
 Generate a comprehensive scorecard in JSON format:
 {
@@ -276,10 +388,10 @@ Generate a comprehensive scorecard in JSON format:
   "technicalScore": <integer 0-100>,
   "communicationScore": <integer 0-100>,
   "confidenceScore": <integer 0-100>,
-  "summary": "<3-4 sentence comprehensive evaluation summary>",
-  "strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
-  "weaknesses": ["<area to improve 1>", "<area to improve 2>"],
-  "suggestions": ["<actionable step 1>", "<actionable step 2>", "<actionable step 3>"]
+  "summary": "<3-4 sentence evaluation summary accurately reflecting their actual answers and attendance>",
+  "strengths": ["<specific strength from their actual answers>"],
+  "weaknesses": ["<specific area of improvement or missing answers>"],
+  "suggestions": ["<actionable advice 1>", "<actionable advice 2>", "<actionable advice 3>"]
 }
 Return raw JSON only without markdown formatting.`;
 
@@ -289,18 +401,18 @@ Return raw JSON only without markdown formatting.`;
       const parsed = JSON.parse(cleaned);
       return parsed;
     } catch (err) {
-      console.error("Gemini final evaluation error:", err.message);
+      console.error("❌ [AI Service] Gemini final evaluation error:", err.message);
     }
   }
 
-  // Fallback evaluation calculation
-  const totalQuestions = questionsWithAnswers.length || 1;
-  const scores = questionsWithAnswers.map((q) => q.score || (q.userTranscript?.length > 20 ? 75 : 40));
-  const avgScore = Math.round(scores.reduce((a, b) => a + b, 0) / totalQuestions);
+  // Fallback calculation: compute mathematically honest scores based on questions actually answered
+  const sumScores = questionsWithAnswers.reduce((acc, q) => acc + (q.score || 0), 0);
+  const avgScore = Math.round(sumScores / totalCount);
 
-  const technicalScore = Math.min(100, Math.max(30, avgScore + 3));
-  const communicationScore = Math.min(100, Math.max(35, avgScore - 2));
-  const confidenceScore = Math.min(100, Math.max(40, avgScore + 1));
+  const completionRatio = answeredCount / totalCount;
+  const technicalScore = Math.round(avgScore * completionRatio);
+  const communicationScore = Math.round((avgScore > 0 ? Math.max(10, avgScore - 5) : 0) * completionRatio);
+  const confidenceScore = Math.round((avgScore > 0 ? Math.max(10, avgScore) : 0) * completionRatio);
   const overallScore = Math.round((technicalScore + communicationScore + confidenceScore) / 3);
 
   return {
@@ -308,20 +420,27 @@ Return raw JSON only without markdown formatting.`;
     technicalScore,
     communicationScore,
     confidenceScore,
-    summary: `The candidate demonstrated a solid foundational grasp of ${jobRole} principles with clear communication and structured problem solving. Continued focus on quantifying results and exploring edge cases will lead to outstanding interview outcomes.`,
-    strengths: [
-      "Clear and articulate verbal communication style",
-      `Relevant domain knowledge tailored for ${jobRole}`,
-      "Structured approach when tackling complex situational questions",
-    ],
+    summary: `The candidate completed ${answeredCount} of ${totalCount} questions for the ${jobRole} position with an average response score of ${avgScore}%. ${
+      answeredCount < totalCount
+        ? "Leaving questions unanswered significantly reduced the overall scorecard."
+        : "Consistent participation throughout the session provided a solid basis for assessment."
+    }`,
+    strengths:
+      answeredCount > 0
+        ? [
+            `Demonstrated initial knowledge in ${jobRole} fundamentals for attempted questions`,
+            "Active engagement in the simulated interview environment",
+          ]
+        : [],
     weaknesses: [
-      "Could incorporate more measurable impact and metrics in responses",
-      "Opportunity to elaborate further on system trade-offs and edge cases",
+      answeredCount < totalCount
+        ? `Missed answering ${totalCount - answeredCount} out of ${totalCount} questions in the session`
+        : "Responses could include more quantifiable outcomes and specific architectural trade-offs",
     ],
     suggestions: [
-      "Use the STAR method (Situation, Task, Action, Result) consistently for all behavioral and project responses",
-      "Deepen preparation on scalability and concurrency trade-offs for high-level technical questions",
-      "Practice concise delivery within 90-120 seconds per answer",
+      "Ensure all questions are attempted to maximize scoring potential",
+      "Use the STAR method (Situation, Task, Action, Result) to structure spoken answers",
+      "Elaborate on real-world engineering constraints and metrics",
     ],
   };
 };

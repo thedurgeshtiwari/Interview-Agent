@@ -91,16 +91,17 @@ const FeedbackReport = () => {
     );
   }
 
-  const score = interview.overallScore || 70;
+  const score = typeof interview.overallScore === "number" ? interview.overallScore : 0;
   const feedback = interview.feedback || {};
-  const techScore = feedback.technicalScore || score;
-  const commScore = feedback.communicationScore || score;
-  const confScore = feedback.confidenceScore || score;
+  const techScore = typeof feedback.technicalScore === "number" ? feedback.technicalScore : score;
+  const commScore = typeof feedback.communicationScore === "number" ? feedback.communicationScore : score;
+  const confScore = typeof feedback.confidenceScore === "number" ? feedback.confidenceScore : score;
 
   const getScoreVerdict = (s) => {
     if (s >= 85) return { label: "Exceptional • High Offer Readiness", color: "text-emerald-600 bg-emerald-50 border-emerald-200" };
     if (s >= 70) return { label: "Proficient • Strong Performance", color: "text-blue-600 bg-blue-50 border-blue-200" };
-    return { label: "Developing • Target Key Areas", color: "text-amber-600 bg-amber-50 border-amber-200" };
+    if (s >= 40) return { label: "Developing • Target Key Areas", color: "text-amber-600 bg-amber-50 border-amber-200" };
+    return { label: "Incomplete • Practice & Re-attempt", color: "text-red-600 bg-red-50 border-red-200" };
   };
 
   const verdict = getScoreVerdict(score);
