@@ -44,7 +44,7 @@ const Navbar = () => {
         
         className='w-full max-w-6xl bg-white rounded-[24px] shadow-sm border border-gray-200 px-8 py-4 flex justify-between items-center relative'>
 
-            <div className='flex items-center gap-3 cursor-pointer'>
+            <div onClick={() => navigate(userData ? '/dashboard' : '/')} className='flex items-center gap-3 cursor-pointer'>
                 <div className='bg-black text-white p-2 rounded-lg'>
                     <BsRobot size={18}/>
                 </div>
@@ -55,71 +55,98 @@ const Navbar = () => {
             </div>
 
             <div className='flex items-center gap-6 relative'>
+                {userData ? (
+                    <>
+                        <div className='relative'>
+                            <button 
+                            onClick={()=>{
+                                setShowCreditPopup(!showCreditPopup);
+                                setShowUserPopup(false);
+                            }}
+                            className='flex items-center gap-2 bg-gray-100 px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-200 transition cursor-pointer'>
+                                <BsCoin size={16} className="text-yellow-500" />
+                                <span>{userData.credits ?? 0} Credits</span>
+                            </button>
 
-                <div className='relative'>
-                    <button 
-                    onClick={()=>{setShowCreditPopup(!showCreditPopup);
-                        setShowUserPopup(false)
-                    }}
-                    
-                    className='flex items-center gap-2 bg-gray-100 px-4 py-2 rounded-full text-md hover:bg-gray-200 transition'>
-                        <BsCoin size={20}/>
-                        {userData?.credits || 0}
-                    </button>
-
-                    {showCreditPopup && (
-                        <div className='absolute right-[-50px] mt-3 w-64 bg-white shadow-xl border border-gray-200 rounded p-5 z-50'>
-                            <p className='text-sm text-gray-600rounded p-5 z-50'>Need more credits to continue interviews?</p>
-                            <button
-                            onClick={()=>navigate("/pricing")} 
-                            
-                            className='w-full bg-black text-white py-2 rounded-lg text-sm'>Buy more credits</button>
-
+                            {showCreditPopup && (
+                                <div className='absolute right-0 mt-3 w-64 bg-white shadow-xl border border-gray-200 rounded-2xl p-5 z-50'>
+                                    <p className='text-sm text-gray-600 mb-3'>Need more credits to continue interviews?</p>
+                                    <button
+                                    onClick={() => {
+                                        setShowCreditPopup(false);
+                                        navigate("/pricing");
+                                    }}
+                                    className='w-full bg-black text-white py-2 rounded-xl text-sm font-semibold hover:bg-gray-800 transition cursor-pointer'>
+                                        Buy more credits
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                    )}
 
-                </div>
+                        <div className='relative'>
+                            <button
+                            onClick={()=>{
+                                setShowUserPopup(!showUserPopup);
+                                setShowCreditPopup(false);
+                            }} 
+                            className='w-9 h-9 bg-black text-white rounded-full flex items-center justify-center font-semibold cursor-pointer hover:bg-gray-800 transition'>
+                                {userData.name ? userData.name.slice(0,1).toUpperCase() : <FaUserAstronaut size={16}/>}
+                            </button>
 
-                <div className='relative'>
+                            {showUserPopup && (
+                                <div className='absolute right-0 mt-3 w-52 bg-white shadow-xl border border-gray-200 rounded-2xl p-4 z-50'>
+                                    <p className='text-sm text-gray-400 font-medium mb-2 border-b border-gray-100 pb-2 truncate'>
+                                        {userData.name}
+                                    </p>
+
+                                    <button
+                                        onClick={() => {
+                                            setShowUserPopup(false);
+                                            navigate("/dashboard");
+                                        }}
+                                        className='w-full text-left text-sm py-2 hover:bg-gray-50 rounded-lg px-2 text-gray-700 transition cursor-pointer'
+                                    >
+                                        Dashboard
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            setShowUserPopup(false);
+                                            navigate("/history");
+                                        }}
+                                        className='w-full text-left text-sm py-2 hover:bg-gray-50 rounded-lg px-2 text-gray-700 transition cursor-pointer'
+                                    >
+                                        Interview History
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            setShowUserPopup(false);
+                                            navigate("/pricing");
+                                        }}
+                                        className='w-full text-left text-sm py-2 hover:bg-gray-50 rounded-lg px-2 text-gray-700 transition cursor-pointer'
+                                    >
+                                        Pricing
+                                    </button>
+
+                                    <button
+                                    onClick={handleLogout}
+                                    className='w-full text-left text-sm py-2 mt-1 border-t border-gray-100 pt-2 flex items-center gap-2 text-red-500 hover:bg-red-50 rounded-lg px-2 transition cursor-pointer'>
+                                        <HiOutlineLogout size={16}/>
+                                        Logout
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </>
+                ) : (
                     <button
-                    onClick={()=>{setShowUserPopup(!showUserPopup);
-                        setShowCreditPopup(false)
-                    }} 
-                    
-                    
-                    className='w-9 h-9 bg-black text-white rounded-full flex items-center justify-center font-semibold'>
-                        {userData ? userData?.name.slice(0,1).toUpperCase() : <FaUserAstronaut size={16}/>}
-
+                        onClick={() => navigate('/auth')}
+                        className='bg-black text-white hover:bg-gray-800 text-sm font-semibold px-5 py-2.5 rounded-full transition cursor-pointer'
+                    >
+                        Sign In
                     </button>
-
-                    {showUserPopup && (
-                        <div className='absolute right-0 mt-3 w-48 bg-white shadow-xl border border-gray-200 rounded-xl p-4 z-50'>
-                        <p className='text-md text-blue-500 font-medium mb-1'>
-                            {userData?.name}
-                        </p>
-
-                        <button
-                            onClick={() => navigate("/history")}
-                            className='w-full text-left text-sm py-2 hover:text-black text-gray-600'
-                        >
-                            Interview History
-                        </button>
-
-                        <button
-                        onClick={handleLogout}
-                         className='w-full text-left text-sm py-2 flex items-center gap-2 text-red-500'>
-                            <HiOutlineLogout size={16}/>
-                            Logout
-                        </button>
-                    </div>
-                    )}
-
-
-
-
-                </div>
-
-
+                )}
             </div>
 
         </motion.div>

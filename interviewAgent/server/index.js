@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser"
 import cors from "cors"
 import authRouter from "./routes/auth.route.js"
 import userRouter from "./routes/user.route.js"
+import interviewRouter from "./routes/interview.route.js"
 
 dotenv.config()
 
@@ -18,16 +19,18 @@ app.use(cors({
     credentials: true,
 }))
 
+app.get("/", (req, res) => {
+    res.json({ status: "ok", message: "InterviewIQ API is running" })
+})
+
 app.use("/api/auth", authRouter)
 app.use("/api/user", userRouter)
+app.use("/api/interview", interviewRouter)
 
-connectDB()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`)
-    })
-  })
-  .catch((error) => {
-    console.error("Failed to connect to database:", error)
-    process.exit(1)
-  })
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`)
+  connectDB()
+})
+
+setInterval(() => {}, 1000 * 60 * 60)
+

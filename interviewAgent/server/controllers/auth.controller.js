@@ -5,6 +5,10 @@ export const googleAuth = async (req, res) => {
   try {
     const { name, email } = req.body;
 
+    if (!name || !email) {
+      return res.status(400).json({ message: "Name and email are required" });
+    }
+
     let user = await User.findOne({ email });
 
     if (!user) {
@@ -19,16 +23,16 @@ export const googleAuth = async (req, res) => {
     res.cookie("token", token, {
       httpOnly: true,
       secure: false,
-      sameSite: "strict",
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     return res.status(200).json(user);
   } catch (error) {
-    console.log(error);
+    console.error("Google Auth Error:", error);
 
     return res.status(500).json({
-      message: "Internal Server Error",
+      message: error.message || "Failed to authenticate with database",
     });
   }
 };
