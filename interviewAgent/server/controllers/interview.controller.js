@@ -8,7 +8,6 @@ import {
 } from "../services/ai.service.js";
 
 const require = createRequire(import.meta.url);
-const { PDFParse } = require("pdf-parse");
 
 // Parse uploaded PDF resume and extract text
 export const parseResumePdf = async (req, res) => {
@@ -25,11 +24,22 @@ export const parseResumePdf = async (req, res) => {
       return res.status(400).json({ message: "Only PDF files are supported for resume parsing" });
     }
 
-    parser = new PDFParse({ data: req.file.buffer });
+    // Lazily load PDF parser
+    let PDFParseClass;
+    try {
+      const pdfModule = await import("pdf-parse");
+      PDFParseClass = pdfModule.PDFParse || pdfModule.default || pdfModule;
+    } catch (importErr) {
+      const pdfModule = require("pdf-parse");
+      PDFParseClass = pdfModule.PDFParse || pdfModule.default || pdfModule;
+    }
+
+    parser = new PDFParseClass({ data: req.file.buffer });
     await parser.load();
     const result = await parser.getText();
     const rawText = (typeof result === "string" ? result : result?.text) || "";
     const numPages = result?.total || 1;
+
 
     // Clean up excessive whitespace and page marker tags
     const cleanedText = rawText
