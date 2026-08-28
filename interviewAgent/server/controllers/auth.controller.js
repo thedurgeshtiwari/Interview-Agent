@@ -22,10 +22,12 @@ export const googleAuth = async (req, res) => {
 
     const token = await genToken(user._id);
 
+    const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
+
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false,
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -67,10 +69,12 @@ export const emailLogin = async (req, res) => {
 
     const token = await genToken(user._id);
 
+    const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
+
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false,
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -107,10 +111,12 @@ export const demoAuth = async (req, res) => {
 
     const token = await genToken(user._id);
 
+    const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
+
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false,
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -132,7 +138,12 @@ export const demoAuth = async (req, res) => {
 // Logout
 export const logOut = async (req, res) => {
   try {
-    res.clearCookie("token");
+    const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+    });
     return res.status(200).json({
       message: "Logout successfully",
     });

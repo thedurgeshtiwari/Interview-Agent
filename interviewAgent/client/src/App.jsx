@@ -12,7 +12,9 @@ import FeedbackReport from "./pages/FeedbackReport";
 import History from "./pages/History";
 import Pricing from "./pages/Pricing";
 
-export const ServerUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+export const ServerUrl = (
+  import.meta.env.VITE_API_BASE_URL || "https://interview-agent-psi-mocha.vercel.app"
+).replace(/\/+$/, "");
 
 // Configure global Axios settings
 axios.defaults.withCredentials = true;
